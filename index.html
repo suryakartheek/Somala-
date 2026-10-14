@@ -1,4 +1,9 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Somala Village</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@700&text=%E0%A5%90&display=swap">
@@ -85,7 +90,8 @@ button[aria-pressed="true"]{background:var(--turmeric);color:#1d1404;border-colo
 #err{inset:0;margin:auto;height:fit-content;width:min(360px,calc(100vw - 32px));padding:18px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
-
+</head>
+<body>
 <div id="app">
   <div id="game"></div>
 
@@ -102,6 +108,10 @@ button[aria-pressed="true"]{background:var(--turmeric);color:#1d1404;border-colo
       <button data-t="18" type="button">Dusk</button>
       <button data-t="22" type="button">Night</button>
       <button id="play" type="button" aria-pressed="true">Auto ▶</button>
+    </div>
+    <div class="row opt">
+      <button id="sndBtn" type="button" aria-pressed="true">🔊 Sound</button>
+      <button id="songBtn" type="button" aria-pressed="false">▶ Play song</button>
     </div>
   </div>
 
@@ -128,6 +138,7 @@ button[aria-pressed="true"]{background:var(--turmeric);color:#1d1404;border-colo
       <li>Press E near any vehicle to drive: auto, sports car, tractor or the two bullock carts</li>
       <li>Walk up to villagers and animals to hear them talk</li>
       <li>Use the time slider or Dawn · Noon · Dusk · Night</li>
+      <li>Animals and engines have sound, and a song plays whenever you drive. Use ▶ Play song any time</li>
     </ul>
     <button id="go" type="button">Start walking</button>
   </div>
@@ -138,6 +149,10 @@ button[aria-pressed="true"]{background:var(--turmeric);color:#1d1404;border-colo
 <script>
 (function(){
 "use strict";
+/* ===== SONG LINK: replace this with your own song's address (an MP3 or M4A link) ===== */
+const SONG_URL="https://audio.jukehost.co.uk/01a139ed-ec5e-718a-9888-e8b7aa1f6429";            // main song: plays while you drive or when you press Play song
+const SHIVA_SONG_URL="https://audio.jukehost.co.uk/01a13a3f-66a5-7223-906c-ba06323e75d5";   // plays when you reach the Shiva temple
+const HANUMAN_SONG_URL="https://audio.jukehost.co.uk/01a13a42-08cb-7247-915f-658b90c18599"; // plays when you reach the Sri Hanuman temple
 const $=id=>document.getElementById(id);
 if(!window.THREE){$('err').hidden=false;$('err').textContent='The 3D engine could not load. Check your connection and reload the page.';$('start').hidden=true;return;}
 
@@ -208,8 +223,11 @@ const signMats=[];
 
 /* ---------- colliders ---------- */
 const colliders=[];
-function addBox(x0,z0,x1,z1){colliders.push({t:'b',x0,z0,x1,z1});}
-function addCirc(x,z,r){colliders.push({t:'c',x,z,r});}
+// colliders live in an 8 m grid so collision checks only look at nearby objects
+const CG=8,cgrid=new Map();
+function gridAdd(c,x0,z0,x1,z1){for(let i=Math.floor(x0/CG);i<=Math.floor(x1/CG);i++)for(let j=Math.floor(z0/CG);j<=Math.floor(z1/CG);j++){const k=i*65536+j;let a=cgrid.get(k);if(!a)cgrid.set(k,a=[]);a.push(c);}}
+function addBox(x0,z0,x1,z1){const c={t:'b',x0,z0,x1,z1};colliders.push(c);gridAdd(c,x0,z0,x1,z1);}
+function addCirc(x,z,r){const c={t:'c',x,z,r};colliders.push(c);gridAdd(c,x-r,z-r,x+r,z+r);}
 const zones=[];
 const paddy=[];
 for(const cx of[188,224,260,296,332,368,404])for(const sd of[-1,1])paddy.push({x0:cx-17,x1:cx+17,z0:sd>0?9.5:-32,z1:sd>0?32:-9.5,ripe:(cx/36|0)%3===sd+1});
@@ -217,10 +235,12 @@ for(const cz of[-188,-224,-260,-296,-332])for(const sd of[-1,1])paddy.push({x0:s
 function inPaddy(x,z,m){for(const p of paddy)if(x>p.x0-m&&x<p.x1+m&&z>p.z0-m&&z<p.z1+m)return true;return false;}
 function inZone(x,z,m){if(inPaddy(x,z,m))return true;for(const q of zones){const a=(x-q.cx)/(q.rx+m),b=(z-q.cz)/(q.rz+m);if(a*a+b*b<1)return true;}return false;}
 function hits(x,z,r){
-  for(const c of colliders){
-    if(c.t==='b'){if(x>c.x0-r&&x<c.x1+r&&z>c.z0-r&&z<c.z1+r)return true;}
-    else{const dx=x-c.x,dz=z-c.z;if(dx*dx+dz*dz<(c.r+r)*(c.r+r))return true;}
-  }
+  const i0=Math.floor((x-r)/CG),i1=Math.floor((x+r)/CG),j0=Math.floor((z-r)/CG),j1=Math.floor((z+r)/CG);
+  for(let i=i0;i<=i1;i++)for(let j=j0;j<=j1;j++){const a=cgrid.get(i*65536+j);if(!a)continue;
+    for(const c of a){
+      if(c.t==='b'){if(x>c.x0-r&&x<c.x1+r&&z>c.z0-r&&z<c.z1+r)return true;}
+      else{const dx=x-c.x,dz=z-c.z;if(dx*dx+dz*dz<(c.r+r)*(c.r+r))return true;}
+    }}
   return false;
 }
 
@@ -258,7 +278,7 @@ for(const r of roads){
     const pos=[];for(let s=r.a+3;s<r.b;s+=7){if(Math.abs(s)>=11)pos.push(s);}
     const dg=new THREE.PlaneGeometry(r.ax==='x'?2.4:0.2,r.ax==='x'?0.2:2.4);dg.rotateX(-Math.PI/2);
     const im=new THREE.InstancedMesh(dg,dashMat,pos.length),o=new THREE.Object3D();
-    pos.forEach((s,i)=>{o.position.set(r.ax==='x'?s:r.c,0.1,r.ax==='x'?r.c:s);o.updateMatrix();im.setMatrixAt(i,o.matrix);});scene.add(im);
+    pos.forEach((s,i)=>{o.position.set(r.ax==='x'?s:r.c,0.1,r.ax==='x'?r.c:s);o.updateMatrix();im.setMatrixAt(i,o.matrix);});im.frustumCulled=false;scene.add(im);
   }
 }
 
@@ -824,7 +844,7 @@ function neem(x,z){
       dm.position.set(x+Math.cos(a)*d,4.2*s+(k?.6:1.6)*s,z+Math.sin(a)*d);dm.scale.set(rad,rad*.72,rad);dm.updateMatrix();
       crowns.setMatrixAt(i*3+k,dm.matrix);crowns.setColorAt(i*3+k,greens[Math.floor(R()*4)]);}
   });
-  scene.add(trunks,crowns);
+  trunks.frustumCulled=crowns.frustumCulled=false;scene.add(trunks,crowns);
 
   // paddy plots: flooded green ones and ripe golden ones, with mud bunds
   const plants=[],mobileStep=mobile?1.25:.95;
@@ -846,7 +866,7 @@ function neem(x,z){
   const pg=new THREE.ConeGeometry(.16,.62,5).translate(0,.31,0);
   const pm=new THREE.InstancedMesh(pg,new THREE.MeshLambertMaterial({color:0xffffff}),plants.length);
   plants.forEach(([x,z,rp],i)=>{dm.position.set(x,.05,z);dm.rotation.set(R()*.15,R()*6.28,R()*.15);const h=rp?rr(1,1.25):rr(.75,1.05);dm.scale.set(1,h,1);dm.updateMatrix();pm.setMatrixAt(i,dm.matrix);pm.setColorAt(i,(rp?ripe:young)[Math.floor(R()*3)]);});
-  pm.receiveShadow=true;scene.add(pm);
+  pm.receiveShadow=true;pm.frustumCulled=false;scene.add(pm);
   // a scarecrow or two
   for(const [x,z] of[[262,-21],[-21,-262],[355,22]]){cyl(.06,.06,2.2,0x6b4b2a,x,1.1,z,null,5);box(1.4,.08,.08,0x6b4b2a,x,1.7,z);box(.5,.6,.3,0xd32f2f,x,1.55,z);const h=new THREE.Mesh(new THREE.SphereGeometry(.22,8,6),M(0xe0c48a));h.position.set(x,2.05,z);scene.add(h);cyl(.4,.4,.06,0xd9b44a,x,2.22,z,null,10);addCirc(x,z,.4);}
 })();
@@ -1008,7 +1028,7 @@ function addCritter(a,x,z,o){
   Object.assign(a,{x:s[0],z:s[1],h:R()*6.28,hx:s[0],hz:s[1],rad:o.rad,spd:o.spd,r:o.r,state:'idle',timer:R()*4,tx:s[0],tz:s[1],graze:o.graze,top:o.top});
   critters.push(a);
   const info=ANIMAL[a.kind];
-  speakers.push({obj:a.g,top:o.top,name:info.name,lines:info.lines,on:()=>true,set talking(v){a.talking=v;}});
+  speakers.push({obj:a.g,kind:a.kind,top:o.top,name:info.name,lines:info.lines,on:()=>true,set talking(v){a.talking=v;}});
 }
 function updCritter(a,dt){
   let mv=false;
@@ -1272,7 +1292,7 @@ function updateTalk(fx,fz){
   if(talkWith){talkWith.obj.getWorldPosition(wp);if(!talkWith.on()||Math.hypot(wp.x-fx,wp.z-fz)>range+1.5){talkWith.talking=false;talkWith=null;}}
   if(!talkWith){let best=null,bd=range;
     for(const s of speakers){if(!s.on())continue;s.obj.getWorldPosition(wp);const d=Math.hypot(wp.x-fx,wp.z-fz);if(d<bd){bd=d;best=s;}}
-    if(best){talkWith=best;best.talking=true;const ls=best.lines(ctx());talkWho.textContent=best.name;talkSay.textContent=ls[Math.floor(Math.random()*ls.length)];}}
+    if(best){talkWith=best;best.talking=true;if(best.kind){best.obj.getWorldPosition(wp);animalCall(best.kind,wp.x,wp.z);}const ls=best.lines(ctx());talkWho.textContent=best.name;talkSay.textContent=ls[Math.floor(Math.random()*ls.length)];}}
   if(!talkWith){talkEl.hidden=true;return;}
   talkWith.obj.getWorldPosition(wp);wp.y+=talkWith.top;wp.project(camera);
   if(wp.z>1){talkEl.hidden=true;return;}
@@ -1351,7 +1371,7 @@ function nearestVeh(){let best=null,bd=0;for(const v of vehicles){const d=Math.h
 function action(){
   if(mode==='walk'){
     const v=nearestVeh();
-    if(v){mode='drive';cur=v;player.visible=false;v.driver.visible=true;$('mode').textContent=v.label;camYaw=0;mountHeadlight(v);}
+    if(v){mode='drive';cur=v;player.visible=false;v.driver.visible=true;$('mode').textContent=v.label;camYaw=0;mountHeadlight(v);initAudio();engineStart(v);musicPlay();}
   }else{
     const v=cur;
     if(Math.abs(v.v)>2){flash('Slow down to get out');return;}
@@ -1359,7 +1379,7 @@ function action(){
     for(const s of[1,-1]){
       const x=v.x+rx*v.exit*s,z=v.z+rz*v.exit*s;
       if(!hits(x,z,.45)&&!inVeh(v,x,z,.3)){
-        mode='walk';v.v=0;player.position.set(x,0,z);player.rotation.y=v.h;player.visible=true;v.driver.visible=false;cur=null;$('mode').textContent='On foot';mountHeadlight(null);return;
+        mode='walk';v.v=0;player.position.set(x,0,z);player.rotation.y=v.h;player.visible=true;v.driver.visible=false;cur=null;$('mode').textContent='On foot';mountHeadlight(null);engineStop();if(!SND.manualOn)musicPause();return;
       }
     }
     flash('No room to step out here');
@@ -1480,6 +1500,8 @@ function step(dt){
   updateLampLights(fx,fz);
 
   updateTalk(fx,fz);
+  soundStep(dt);
+  templeMusic(fx,fz);
   drawMap(fx,fz,fh);
 }
 
@@ -1492,6 +1514,95 @@ function panelToggle(el,btn,key,labels,names){
 }
 panelToggle($('hud'),$('hudMin'),'somala.hudMin',['–','+'],['Minimize time panel','Expand time panel']);
 panelToggle($('mapwrap'),$('mapMin'),'somala.mapMin',['–','Map'],['Hide map','Show map']);
+
+/* ---------- sound: engines, cart bells, animal calls, and your own song while driving ---------- */
+const SND={ctx:null,master:null,sfx:null,music:null,on:true,engine:null,song:null,songName:'',src:null,songOff:0,songStart:0,bellD:0};
+function initAudio(){
+  if(SND.ctx){if(SND.ctx.state==='suspended')SND.ctx.resume().catch(()=>{});return;}
+  const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+  const c=SND.ctx=new AC();
+  SND.master=c.createGain();SND.master.gain.value=SND.on?1:0;SND.master.connect(c.destination);
+  SND.sfx=c.createGain();SND.sfx.gain.value=.4;SND.sfx.connect(SND.master);          // medium volume for vehicles and animals
+  SND.music=c.createGain();SND.music.gain.value=.05;SND.music.connect(SND.master);    // song at 30%
+  SND.veh=c.createGain();SND.veh.gain.value=.01;SND.veh.connect(SND.master);        // car, tractor and auto engines at 5%
+  SND.bell=c.createGain();SND.bell.gain.value=.1;SND.bell.connect(SND.master);      // bullock cart bells at 10%
+  const nb=c.createBuffer(1,c.sampleRate,c.sampleRate),d=nb.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;SND.noise=nb;
+  if(cur)engineStart(cur);
+}
+function out(vol,pan){const c=SND.ctx,g=c.createGain();g.gain.value=vol;let n=g;if(c.createStereoPanner){const p=c.createStereoPanner();p.pan.value=clamp(pan||0,-1,1);g.connect(p);p.connect(SND.sfx);}else g.connect(SND.sfx);return n;}
+function tone(type,f0,f1,dur,vol,dest,t0=0,filt){const c=SND.ctx,t=c.currentTime+t0,o=c.createOscillator(),g=c.createGain();o.type=type;o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(Math.max(20,f1),t+dur);
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+Math.min(.04,dur*.2));g.gain.exponentialRampToValueAtTime(.001,t+dur);
+  let n=o;if(filt){const f=c.createBiquadFilter();f.type=filt[0];f.frequency.value=filt[1];f.Q.value=filt[2]||1;o.connect(f);n=f;}n.connect(g);g.connect(dest);o.start(t);o.stop(t+dur+.05);return o;}
+function noiseHit(dur,vol,dest,t0,ft,ff,q){const c=SND.ctx,t=c.currentTime+t0,s=c.createBufferSource(),f=c.createBiquadFilter(),g=c.createGain();s.buffer=SND.noise;f.type=ft;f.frequency.value=ff;f.Q.value=q||1;
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);s.connect(f);f.connect(g);g.connect(dest);s.start(t,Math.random()*.5);s.stop(t+dur+.05);}
+const CALLS={
+  cow(d){const t0=0,o=tone('sawtooth',135,95,1.3,.5,d,t0,['bandpass',650,1.2]);const l=SND.ctx.createOscillator(),lg=SND.ctx.createGain();l.frequency.value=5;lg.gain.value=4;l.connect(lg);lg.connect(o.frequency);l.start();l.stop(SND.ctx.currentTime+1.4);tone('sawtooth',270,190,1.2,.12,d,0,['bandpass',1200,2]);},
+  bull(d){tone('sawtooth',105,78,1.5,.55,d,0,['bandpass',520,1.2]);},
+  dog(d){for(const t0 of[0,.24]){tone('square',620,330,.13,.35,d,t0,['bandpass',900,2.5]);noiseHit(.09,.25,d,t0,'bandpass',1500,1.5);}},
+  hen(d){for(let i=0;i<4;i++)tone('triangle',820+Math.random()*180,640,.07,.32,d,i*.11,['bandpass',1400,3]);tone('triangle',700,1050,.32,.28,d,.5,['bandpass',1400,3]);},
+  goat(d){const o=tone('sawtooth',360,300,.75,.4,d,0,['bandpass',1100,2]);const l=SND.ctx.createOscillator(),lg=SND.ctx.createGain();l.frequency.value=9;lg.gain.value=22;l.connect(lg);lg.connect(o.frequency);l.start();l.stop(SND.ctx.currentTime+.8);}
+};
+const _cp=new THREE.Vector3();
+function animalCall(kind,x,z){
+  if(!SND.ctx||!SND.on||!CALLS[kind])return;
+  const dx=x-camera.position.x,dz=z-camera.position.z,d=Math.hypot(dx,dz);if(d>40)return;
+  camera.getWorldDirection(_cp);const right=new THREE.Vector3(-_cp.z,0,_cp.x).normalize();
+  CALLS[kind](out(1/(1+d/7),(dx*right.x+dz*right.z)/Math.max(d,1)));
+}
+const ENG={auto:{type:'sawtooth',base:46,range:62,cut:[700,1700],am:.55,vol:.32},car:{type:'sawtooth',base:68,range:250,cut:[650,2600],am:.12,vol:.3},tractor:{type:'square',base:26,range:24,cut:[380,900],am:.7,vol:.34}};
+function engineStart(v){
+  engineStop();if(!SND.ctx||!ENG[v.name])return;
+  const c=SND.ctx,p=ENG[v.name],o=c.createOscillator(),o2=c.createOscillator(),f=c.createBiquadFilter(),am=c.createGain(),g=c.createGain(),l=c.createOscillator(),lg=c.createGain();
+  o.type=p.type;o2.type='square';f.type='lowpass';f.Q.value=2;g.gain.value=0;am.gain.value=1-p.am/2;
+  l.type='square';lg.gain.value=p.am/2;l.connect(lg);lg.connect(am.gain);
+  const og=c.createGain();og.gain.value=.5;o.connect(f);o2.connect(og);og.connect(f);f.connect(am);am.connect(g);g.connect(SND.sfx);
+  o.start();o2.start();l.start();SND.engine={v,p,o,o2,f,g,l,parts:[o,o2,l]};
+  g.gain.setTargetAtTime(p.vol,c.currentTime,.15);SND.engine.g.disconnect();SND.engine.g.connect(SND.veh);
+}
+function engineStop(){const e=SND.engine;if(!e)return;const c=SND.ctx;e.g.gain.setTargetAtTime(0,c.currentTime,.12);const parts=e.parts;setTimeout(()=>parts.forEach(n=>{try{n.stop();}catch(_){}}),600);SND.engine=null;}
+function soundStep(dt){
+  if(!SND.ctx)return;
+  const e=SND.engine;
+  if(e){const v=e.v,p=e.p,sp=clamp(Math.abs(v.v)/v.max,0,1),thr=(keys.up||keys.down)?1:0,t=SND.ctx.currentTime;
+    const f=p.base+p.range*sp+thr*p.range*.08;e.o.frequency.setTargetAtTime(f,t,.08);e.o2.frequency.setTargetAtTime(f*.5,t,.08);e.l.frequency.setTargetAtTime(f*.5,t,.08);
+    e.f.frequency.setTargetAtTime(p.cut[0]+(p.cut[1]-p.cut[0])*(sp*.8+thr*.2),t,.1);e.g.gain.setTargetAtTime(p.vol*(.7+.3*sp+.15*thr),t,.1);}
+  // bullock cart: brass bells and hoof clops while moving
+  if(cur&&cur.name==='cart'&&SND.on){const sp=Math.abs(cur.v);SND.bellD+=sp*dt;
+    if(SND.bellD>1.3){SND.bellD=0;const d=SND.bell;tone('sine',1870+Math.random()*120,1800,.5,.22,d,0);tone('sine',2790,2700,.35,.1,d,0);noiseHit(.06,.35,d,.02,'bandpass',420,2);noiseHit(.06,.3,d,.33,'bandpass',380,2);}
+    if(Math.random()<dt*.04)CALLS.bull(SND.bell);}
+  // ambient animal calls nearby
+  if(SND.on)for(const a of critters){const d=Math.hypot(a.x-camera.position.x,a.z-camera.position.z);if(d>30)continue;
+    const rate={dog:.025,cow:.015,hen:.05,goat:.02}[a.kind]||0;if(Math.random()<rate*dt)animalCall(a.kind,a.x,a.z);}
+}
+/* ---------- songs: main song streams from SONG_URL; each temple has its own song that takes over while you are there ---------- */
+const songEl=new Audio();songEl.preload='none';songEl.loop=true;songEl.volume=.02;
+let songReady=false;
+const TEMPLES=[{id:'shiva',name:'Shiva temple',url:SHIVA_SONG_URL,x:-24,z:16,r:14},{id:'hanuman',name:'Sri Hanuman temple',url:HANUMAN_SONG_URL,x:-230,z:-34,r:25}];
+for(const tp of TEMPLES){tp.el=new Audio();tp.el.preload='none';tp.el.loop=true;tp.el.volume=.02;tp.ready=false;tp.el.addEventListener('play',()=>songBtnLabel());tp.el.addEventListener('pause',()=>songBtnLabel());}
+let atTemple=null,mainWasOn=false,templeUserOff=false;
+const templeSong=()=>atTemple&&atTemple.url?atTemple:null;
+function musicPlay(){if(SND.userOff||!SONG_URL||templeSong())return;if(!songReady){songEl.src=SONG_URL;songReady=true;}songEl.muted=!SND.on;
+  const p=songEl.play();if(p&&p.catch)p.catch(()=>{flash('The song could not play. Check the SONG_URL link.');songBtnLabel();});setTimeout(songBtnLabel,50);}
+function musicPause(){songEl.pause();songBtnLabel();}
+function templePlay(tp){if(!tp.ready){tp.el.src=tp.url;tp.ready=true;}tp.el.currentTime=0;tp.el.muted=!SND.on;const p=tp.el.play();if(p&&p.catch)p.catch(()=>flash('The temple song could not play. Check its link.'));}
+function songBtnLabel(){const b=$('songBtn');if(!b)return;const tp=templeSong(),on=tp?!tp.el.paused:!songEl.paused;b.textContent=on?'⏸ Pause song':'▶ Play song';b.setAttribute('aria-pressed',String(on));}
+songEl.addEventListener('play',songBtnLabel);songEl.addEventListener('pause',songBtnLabel);
+// called every frame with your position (on foot or in a vehicle)
+function templeMusic(x,z){
+  let here=null;for(const tp of TEMPLES){const d=Math.hypot(x-tp.x,z-tp.z);if(d<tp.r||(tp===atTemple&&d<tp.r+5)){here=tp;break;}}
+  if(here===atTemple)return;
+  const left=atTemple;atTemple=here;
+  if(left&&left.url){left.el.pause();}
+  if(here&&here.url){mainWasOn=mainWasOn||!songEl.paused;songEl.pause();templeUserOff=false;templePlay(here);flash('🎵 '+here.name+' song');}
+  else if(left&&left.url){if(mainWasOn||(cur&&!SND.userOff)){musicPlay();}mainWasOn=false;}
+  songBtnLabel();
+}
+SND.userOff=false;SND.manualOn=false;
+$('songBtn').addEventListener('click',e=>{e.stopPropagation();initAudio();
+  const tp=templeSong();if(tp){if(tp.el.paused){tp.el.muted=!SND.on;tp.el.play().catch(()=>{});templeUserOff=false;}else{tp.el.pause();templeUserOff=true;}return;}
+  if(!songEl.paused){musicPause();SND.userOff=true;SND.manualOn=false;}else{SND.userOff=false;SND.manualOn=!cur;musicPlay();}});
+$('sndBtn').addEventListener('click',e=>{e.stopPropagation();initAudio();SND.on=!SND.on;if(SND.master)SND.master.gain.setTargetAtTime(SND.on?1:0,SND.ctx.currentTime,.05);$('sndBtn').textContent=SND.on?'🔊 Sound':'🔇 Muted';songEl.muted=!SND.on;for(const tp of TEMPLES)tp.el.muted=!SND.on;$('sndBtn').setAttribute('aria-pressed',String(SND.on));});
+for(const ev of['pointerdown','keydown','touchstart'])addEventListener(ev,initAudio,{passive:true});
 
 /* ---------- live-reload state ---------- */
 window.claude?.hot?.snapshot?.(()=>({t,playing,px:player.position.x,pz:player.position.z,ph:player.rotation.y,veh:vehicles.map(v=>({x:v.x,z:v.z,h:v.h}))}));
@@ -1514,5 +1625,5 @@ window.claude?.hot?.ready?window.claude.hot.ready(start):start(window.claude?.ho
 if(document.fonts){Promise.all([document.fonts.load('700 40px "Baloo Tammudu 2"','సోమల'),document.fonts.load('700 100px "Noto Sans Devanagari"','ॐ'),document.fonts.ready]).then(()=>redraws.forEach(f=>f())).catch(()=>{});}
 })();
 </script>
-
-</body></html>
+</body>
+</html>
